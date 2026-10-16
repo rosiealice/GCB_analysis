@@ -1,0 +1,13 @@
+{
+  "ilamb_url": "https://gws-access.jasmin.ac.uk/public/landsurf_rdg/pmcguire/ILAMB_output_TRENDYv15/GCP_270926a4/",
+  "field": "bias_map_of_lai",
+  "models": [
+    "CLM-FATES"
+  ],
+  "region": "Amazon basin",
+  "boundary": "amazon_basin.geojson",
+  "mask_method": "Grid-cell centre within polygon",
+  "colour_limit": null,
+  "colour_min": -4.485507682414904,
+  "colour_max": 4.485507682414904
+}

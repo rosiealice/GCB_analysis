@@ -1,0 +1,66 @@
+{
+  "region": "Amazon basin",
+  "ilamb_url": "https://gws-access.jasmin.ac.uk/public/landsurf_rdg/pmcguire/ILAMB_output_TRENDYv15/GCP_270926a4/",
+  "models": [
+    "CABLE-POP",
+    "CARDAMOM",
+    "CLASSIC",
+    "CLM-FATES",
+    "CLM6.0",
+    "DLEM",
+    "E3SM",
+    "EDv3",
+    "GDSTEM",
+    "IBIS",
+    "iMAPLE",
+    "IQJ",
+    "ISAM",
+    "ISBA-CTRIP",
+    "JSBACH",
+    "JULES",
+    "LPJ-EOSIM",
+    "LPJ-GUESS",
+    "LPJmL",
+    "LPX-Bern",
+    "ORCHIDEEv4",
+    "SDGVM",
+    "VISIT",
+    "VISIT-UT"
+  ],
+  "inputs": [
+    "/nird/home/rosief/gt/GCB_analysis/outputs/modis_lai_bias_map_of_lai_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/modis_et_bias_map_of_et_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/gleam_et_bias_map_of_et_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/fluxcom_gpp_bias_map_of_gpp_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/wecann_gpp_bias_map_of_gpp_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/avh15c1_lai_bias_map_of_lai_amazon_basin.json"
+  ],
+  "normalization": "mean bias / largest absolute model mean bias per benchmark",
+  "zero_scale": "All zero biases map to zero",
+  "weighting": "Spherical cell area from native bounds",
+  "mask": "Saved basin grid-centre mask; average over valid cells only",
+  "caveat": "Custom relative mean-bias score, not ILAMB skill. Spatial errors can still cancel within a regional mean.",
+  "source_summary": "normalized_mean_bias_amazon_basin.csv",
+  "biomass_change_source": "esacci_biomass_change_ranked_bias_amazon_basin.csv",
+  "category_score": "1 - abs(normalized regional mean bias)",
+  "variable_references": {
+    "ET": [
+      "MODIS",
+      "GLEAMv3.3a"
+    ],
+    "LAI": [
+      "MODIS",
+      "AVH15C1"
+    ],
+    "GPP": [
+      "FLUXCOM",
+      "WECANN"
+    ]
+  },
+  "et_score": "Mean of MODIS and GLEAM ET benchmark scores",
+  "lai_score": "Mean of MODIS and AVH15C1 LAI benchmark scores",
+  "gpp_score": "Mean of FLUXCOM and WECANN GPP benchmark scores",
+  "biomass_change_score": "ESACCI6.0 biomass-change score from the separate GCP_270926a4BE run",
+  "aggregate_score": "Equal-weight mean of all six comparison benchmarks and ESACCI6.0 biomass change; category scores are reported as within-variable means",
+  "ordering": "Highest aggregate score first"
+}

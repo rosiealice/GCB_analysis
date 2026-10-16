@@ -1,0 +1,53 @@
+{
+  "region": "Amazon basin",
+  "ilamb_url": "https://gws-access.jasmin.ac.uk/public/landsurf_rdg/pmcguire/ILAMB_output_TRENDYv15/GCP_270926a4/",
+  "models": [
+    "CABLE-POP",
+    "CARDAMOM",
+    "CLASSIC",
+    "CLM-FATES",
+    "CLM6.0",
+    "DLEM",
+    "E3SM",
+    "EDv3",
+    "GDSTEM",
+    "IBIS",
+    "iMAPLE",
+    "IQJ",
+    "ISAM",
+    "ISBA-CTRIP",
+    "JSBACH",
+    "JULES",
+    "LPJ-EOSIM",
+    "LPJ-GUESS",
+    "LPJmL",
+    "LPX-Bern",
+    "ORCHIDEEv4",
+    "SDGVM",
+    "VISIT",
+    "VISIT-UT"
+  ],
+  "observed": {
+    "model": "FLUXCOM GPP / MODIS LAI observations",
+    "kind": "observation",
+    "mean_gpp_g_m2_day": 7.353845688628291,
+    "mean_lai": 4.033157792288317,
+    "gpp_lai_ratio_g_m2_day": 1.823346882854265,
+    "valid_cells": 1929,
+    "valid_area_m2": 5894307945144.78
+  },
+  "units": "g/m2/day",
+  "fields": [
+    "MeanState/timeint_of_gpp",
+    "MeanState/timeint_of_lai"
+  ],
+  "method": "Ratio of area-weighted regional means, not mean of cell ratios",
+  "mask": "Common finite GPP and LAI cells within the basin, separately for each model or observation pair",
+  "weighting": "Spherical area from native cell bounds; GPP and LAI grids must match within each pair",
+  "ordering": "Closest to the observed ratio first",
+  "reference_files": {
+    "fluxcom-gpp": "/nird/home/rosief/gt/GCB_analysis/cache/public_landsurf_rdg_pmcguire_ILAMB_output_TRENDYv15_GCP_270926a4/fluxcom-gpp/FLUXCOM_Benchmark.nc",
+    "modis-lai": "/nird/home/rosief/gt/GCB_analysis/cache/public_landsurf_rdg_pmcguire_ILAMB_output_TRENDYv15_GCP_270926a4/MODIS_Benchmark.nc"
+  },
+  "caveat": "Uses ILAMB-supplied period means without temporal harmonization. Native grids and valid footprints differ between models and observations; ratio agreement does not ensure either field is unbiased."
+}

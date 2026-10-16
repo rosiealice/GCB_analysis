@@ -1,0 +1,43 @@
+{
+  "region": "Amazon basin",
+  "ilamb_url": "https://gws-access.jasmin.ac.uk/public/landsurf_rdg/pmcguire/ILAMB_output_TRENDYv15/GCP_270926a4/",
+  "models": [
+    "CABLE-POP",
+    "CARDAMOM",
+    "CLASSIC",
+    "CLM-FATES",
+    "CLM6.0",
+    "DLEM",
+    "E3SM",
+    "EDv3",
+    "GDSTEM",
+    "IBIS",
+    "iMAPLE",
+    "IQJ",
+    "ISAM",
+    "ISBA-CTRIP",
+    "JSBACH",
+    "JULES",
+    "LPJ-EOSIM",
+    "LPJ-GUESS",
+    "LPJmL",
+    "LPX-Bern",
+    "ORCHIDEEv4",
+    "SDGVM",
+    "VISIT",
+    "VISIT-UT"
+  ],
+  "inputs": [
+    "/nird/home/rosief/gt/GCB_analysis/outputs/modis_lai_bias_map_of_lai_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/modis_et_bias_map_of_et_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/gleam_et_bias_map_of_et_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/fluxcom_gpp_bias_map_of_gpp_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/wecann_gpp_bias_map_of_gpp_amazon_basin.json",
+    "/nird/home/rosief/gt/GCB_analysis/outputs/avh15c1_lai_bias_map_of_lai_amazon_basin.json"
+  ],
+  "normalization": "mean bias / largest absolute model mean bias per benchmark",
+  "zero_scale": "All zero biases map to zero",
+  "weighting": "Spherical cell area from native bounds",
+  "mask": "Saved basin grid-centre mask; average over valid cells only",
+  "caveat": "Signed mean errors can cancel; this is not an ILAMB skill score. Scales depend on the plotted models."
+}

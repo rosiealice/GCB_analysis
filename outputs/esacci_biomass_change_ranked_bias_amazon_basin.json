@@ -1,0 +1,225 @@
+{
+  "region": "Amazon basin",
+  "source": "ESACCI6.0",
+  "variable": "Biomass change",
+  "ranking": "Ascending signed area-weighted regional mean bias (most negative first)",
+  "caveat": "Signed errors can cancel within the regional mean; not a spatial error or ILAMB skill score.",
+  "models": [
+    {
+      "model": "LPJ-EOSIM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.1642385768467557,
+      "valid_cells": 1929,
+      "valid_area_m2": 5894307945144.78,
+      "rank": 1
+    },
+    {
+      "model": "IBIS",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.15510251661458646,
+      "valid_cells": 1929,
+      "valid_area_m2": 5894307945144.78,
+      "rank": 2
+    },
+    {
+      "model": "E3SM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.09987918482208363,
+      "valid_cells": 4074,
+      "valid_area_m2": 5910876231594.842,
+      "rank": 3
+    },
+    {
+      "model": "VISIT-UT",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.08326838604220987,
+      "valid_cells": 1931,
+      "valid_area_m2": 5900485785808.761,
+      "rank": 4
+    },
+    {
+      "model": "LPX-Bern",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.07832889883673014,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 5
+    },
+    {
+      "model": "DLEM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.07647330961809902,
+      "valid_cells": 1929,
+      "valid_area_m2": 5894307945144.78,
+      "rank": 6
+    },
+    {
+      "model": "CLM-FATES",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.045139803459195875,
+      "valid_cells": 4074,
+      "valid_area_m2": 5910876231594.842,
+      "rank": 7
+    },
+    {
+      "model": "CARDAMOM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": -0.030472234831283834,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 8
+    },
+    {
+      "model": "JSBACH",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.000693488827482302,
+      "valid_cells": 3034,
+      "valid_area_m2": 5901885060476.713,
+      "rank": 9
+    },
+    {
+      "model": "JULES",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.023245010478349707,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 10
+    },
+    {
+      "model": "LPJ-GUESS",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.035541074424781625,
+      "valid_cells": 1929,
+      "valid_area_m2": 5894307945144.78,
+      "rank": 11
+    },
+    {
+      "model": "ORCHIDEEv4",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.03692773383403934,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 12
+    },
+    {
+      "model": "LPJmL",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.04076418241164062,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 13
+    },
+    {
+      "model": "ISBA-CTRIP",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.04930543860840733,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 14
+    },
+    {
+      "model": "VISIT",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.0998702132204287,
+      "valid_cells": 1931,
+      "valid_area_m2": 5900485785808.761,
+      "rank": 15
+    },
+    {
+      "model": "CLM6.0",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.10794316289631191,
+      "valid_cells": 4074,
+      "valid_area_m2": 5910876231594.842,
+      "rank": 16
+    },
+    {
+      "model": "SDGVM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.11803464601115728,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 17
+    },
+    {
+      "model": "iMAPLE",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.15464027218181073,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 18
+    },
+    {
+      "model": "IQJ",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.1805238233973357,
+      "valid_cells": 3874,
+      "valid_area_m2": 5918783798184.323,
+      "rank": 19
+    },
+    {
+      "model": "ISAM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.20034964983803663,
+      "valid_cells": 1929,
+      "valid_area_m2": 5894307945144.78,
+      "rank": 20
+    },
+    {
+      "model": "GDSTEM",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.2118606197931766,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 21
+    },
+    {
+      "model": "CABLE-POP",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.25413105513434747,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 22
+    },
+    {
+      "model": "CLASSIC",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.32570686557889533,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 23
+    },
+    {
+      "model": "EDv3",
+      "field": "bias_map_of_biomass_change",
+      "units": "kg m-2",
+      "mean_bias": 0.3889308286963932,
+      "valid_cells": 1932,
+      "valid_area_m2": 5903576589109.044,
+      "rank": 24
+    }
+  ]
+}

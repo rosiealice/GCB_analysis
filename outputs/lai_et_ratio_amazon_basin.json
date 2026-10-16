@@ -1,0 +1,53 @@
+{
+  "region": "Amazon basin",
+  "ilamb_url": "https://gws-access.jasmin.ac.uk/public/landsurf_rdg/pmcguire/ILAMB_output_TRENDYv15/GCP_270926a4/",
+  "models": [
+    "CABLE-POP",
+    "CARDAMOM",
+    "CLASSIC",
+    "CLM-FATES",
+    "CLM6.0",
+    "DLEM",
+    "E3SM",
+    "EDv3",
+    "GDSTEM",
+    "IBIS",
+    "iMAPLE",
+    "IQJ",
+    "ISAM",
+    "ISBA-CTRIP",
+    "JSBACH",
+    "JULES",
+    "LPJ-EOSIM",
+    "LPJ-GUESS",
+    "LPJmL",
+    "LPX-Bern",
+    "ORCHIDEEv4",
+    "SDGVM",
+    "VISIT",
+    "VISIT-UT"
+  ],
+  "observed": {
+    "model": "MODIS observations",
+    "kind": "observation",
+    "mean_lai": 4.033157792288317,
+    "mean_et_mm_day": 3.551416644618286,
+    "lai_et_ratio_day_mm": 1.1356476009087944,
+    "valid_cells": 1929,
+    "valid_area_m2": 5894307945144.78
+  },
+  "units": "day/mm",
+  "fields": [
+    "MeanState/timeint_of_lai",
+    "MeanState/timeint_of_et"
+  ],
+  "method": "Ratio of area-weighted regional means, not mean of cell ratios",
+  "mask": "Common finite LAI and ET cells within the basin, separately for each model or observation pair",
+  "weighting": "Spherical area from native cell bounds; LAI and ET grids must match within each pair",
+  "ordering": "Ascending absolute LAI/ET ratio",
+  "reference_files": {
+    "modis-lai": "/nird/home/rosief/gt/GCB_analysis/cache/public_landsurf_rdg_pmcguire_ILAMB_output_TRENDYv15_GCP_270926a4/MODIS_Benchmark.nc",
+    "modis-et": "/nird/home/rosief/gt/GCB_analysis/cache/public_landsurf_rdg_pmcguire_ILAMB_output_TRENDYv15_GCP_270926a4/modis-et/MODIS_Benchmark.nc"
+  },
+  "caveat": "Uses ILAMB-supplied period means without temporal harmonization. Native grids and valid footprints differ between models and observations; ratio agreement does not ensure either field is unbiased."
+}
