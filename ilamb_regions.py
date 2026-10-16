@@ -49,9 +49,22 @@ BENCHMARKS = {
     "avh15c1-lai": {"path": "EcosystemandCarbonCycle/LeafAreaIndex/AVH15C1/",
                     "source": "AVH15C1", "variable": "LAI", "field": "bias_map_of_lai",
                     "slug": "avh15c1_lai"},
+    "esacci-biomass-change": {
+        "path": "EcosystemandCarbonCycle/BiomassChange/ESACCI6.0/",
+        "source": "ESACCI6.0", "variable": "Biomass change",
+        "field": "bias_map_of_biomass_change", "slug": "esacci_biomass_change",
+        "url": DEFAULT_URL.replace("GCP_270926a4/", "GCP_270926a4BE/"),
+    },
+    "esacci-biomass-stock": {
+        "path": "EcosystemandCarbonCycle/Biomass/ESACCI6.0/",
+        "source": "ESACCI6.0", "variable": "Biomass stock", "field": None,
+        "slug": "esacci_biomass_stock",
+        "url": DEFAULT_URL.replace("GCP_270926a4/", "GCP_270926a4BE/"),
+    },
 }
-COMPARISON_BENCHMARKS = tuple(key for key in BENCHMARKS
-                             if key not in ("gleam-et", "wecann-gpp", "avh15c1-lai"))
+BIOMASS_BENCHMARKS = ("esacci-biomass-change", "esacci-biomass-stock")
+COMPARISON_BENCHMARKS = tuple(key for key in BENCHMARKS if key not in BIOMASS_BENCHMARKS)
+AGGREGATE_BENCHMARKS = COMPARISON_BENCHMARKS + BIOMASS_BENCHMARKS
 BASIN_URL = (
     "https://data.hydrosheds.org/file/hydrobasins/standard/"
     "hybas_sa_lev04_v1c.zip"
@@ -62,6 +75,22 @@ AGGREGATE_RED_MODELS = {
     "JSBACH", "CLASSIC", "VISIT", "LPJ-EOSIM", "DLEM",
 }
 ROOT = Path(__file__).resolve().parent
+
+
+def metadata_path(cache, output_dir, stem):
+    output_key = str(output_dir.resolve()).replace(os.sep, "_").strip("_")
+    path = cache / ".metadata" / output_key / f"{stem.name}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def csv_path(stem, create=False):
+    path = stem.parent / "csv" / f"{stem.name}.csv"
+    if create:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 ET_RATIO_SPECS = {
     "LAI": {"benchmark": "modis-lai", "field": "timeint_of_lai", "native_units": "1",
         "mean_key": "mean_lai", "ratio_key": "lai_et_ratio_day_mm",
@@ -69,6 +98,13 @@ ET_RATIO_SPECS = {
     "GPP": {"benchmark": "fluxcom-gpp", "field": "timeint_of_gpp", "native_units": "g m-2 d-1",
         "mean_key": "mean_gpp_g_m2_day", "ratio_key": "gpp_et_ratio_g_m2_mm",
         "units": "g/m2/mm", "reference_label": "FLUXCOM GPP / MODIS ET"},
+}
+LAI_GPP_RATIO_SPEC = {
+    "lai_field": "timeint_of_lai", "gpp_field": "timeint_of_gpp",
+    "lai_units": "1", "gpp_units": "g m-2 d-1",
+    "mean_lai_key": "mean_lai", "mean_gpp_key": "mean_gpp_g_m2_day",
+    "ratio_key": "lai_gpp_ratio_day_m2_g", "units": "m2 day/g",
+    "reference_label": "MODIS LAI / FLUXCOM GPP",
 }
 
 
@@ -209,7 +245,7 @@ def colour_normalization(values, field, limit=None, vmin=None, vmax=None):
 
 
 def plot_models(results, geometry, field, region_name, output, columns=5, limit=None,
-                vmin=None, vmax=None, source="MODIS", variable="LAI"):
+                vmin=None, vmax=None, source="MODIS", variable="LAI", north_limit=None):
     units = {data.attrs.get("units", "1") for _, data in results}
     if len(units) != 1:
         raise ValueError(f"Inconsistent units across models: {units}")
@@ -223,9 +259,15 @@ def plot_models(results, geometry, field, region_name, output, columns=5, limit=
     extension = "both" if below and above else "min" if below else "max" if above else "neither"
     columns = min(columns, len(results))
     rows = math.ceil(len(results) / columns)
-    figure, axes = plt.subplots(rows, columns, figsize=(3.5 * columns, 3.1 * rows),
-                                squeeze=False)
     west, south, east, north = geometry.bounds
+    plot_north = min(north, north_limit) if north_limit is not None else north
+    if plot_north <= south:
+        raise ValueError("North limit must be greater than the region's southern bound")
+    map_aspect = ((east - west) * np.cos(np.deg2rad((south + plot_north) / 2))
+                  / max(plot_north - south, np.finfo(float).eps))
+    column_width = min(3.5, max(1.5, 0.6 + 1.9 * map_aspect))
+    figure, axes = plt.subplots(rows, columns, figsize=(column_width * columns, 3.1 * rows),
+                                squeeze=False)
     polygons = list(geometry.geoms) if geometry.geom_type == "MultiPolygon" else [geometry]
     for axis, (model, data) in zip(axes.flat, results):
         image = axis.pcolormesh(data.lon, data.lat, data.values, cmap=cmap,
@@ -236,14 +278,14 @@ def plot_models(results, geometry, field, region_name, output, columns=5, limit=
             for interior in polygon.interiors:
                 longitude, latitude = interior.xy
                 axis.plot(longitude, latitude, color="0.25", linewidth=0.3)
-        axis.set(xlim=(west - 0.7, east + 0.7), ylim=(south - 0.7, north + 0.7),
-                 title=model, facecolor="#f0f0f0")
+        axis.set(xlim=(west - 0.7, east + 0.7), ylim=(south - 0.7, plot_north),
+             title=model, facecolor="white")
         axis.title.set_fontweight("bold" if model == "CLM-FATES" else "normal")
         axis.set_aspect(1 / np.cos(np.deg2rad((south + north) / 2)))
         axis.tick_params(labelsize=8)
         axis.grid(alpha=0.15, linewidth=0.5)
-        axis.set_xlabel("Longitude", fontsize=8)
-        axis.set_ylabel("Latitude", fontsize=8)
+        axis.set_xlabel("Longitude", fontsize=4.8)
+        axis.set_ylabel("Latitude", fontsize=4.8)
     for axis in list(axes.flat)[len(results):]:
         axis.set_visible(False)
     metric = field.split("_map_of_", 1)[0].replace("_", " ")
@@ -252,16 +294,17 @@ def plot_models(results, geometry, field, region_name, output, columns=5, limit=
         label = f"{variable} bias: model minus {source} [{display_unit}]"
     else:
         label = f"{variable} {metric} [{display_unit}]"
-    figure.suptitle(f"{region_name} | {source} {variable} | {len(results)} TRENDYv15 models",
-                   fontsize=16)
+    figure.suptitle(
+        f"{region_name} | Bias map: TRENDY models vs {source} {variable} | {len(results)} models",
+        fontsize=16,
+    )
     figure.subplots_adjust(left=0.055, right=0.97, top=0.93, bottom=0.12,
-                           hspace=0.38, wspace=0.3)
+                           hspace=0.38, wspace=0.15)
     colorbar_axis = figure.add_axes((0.25, 0.045, 0.5, 0.015))
     colorbar = figure.colorbar(image, cax=colorbar_axis, orientation="horizontal",
                               extend=extension)
     colorbar.set_label(label)
-    for suffix in (".png", ".pdf"):
-        figure.savefig(output.with_suffix(suffix), dpi=180, facecolor="white")
+    figure.savefig(output.with_suffix(".png"), dpi=180, facecolor="white")
     plt.close(figure)
     return float(norm.vmin), float(norm.vmax)
 
@@ -297,6 +340,60 @@ def area_weighted_mean(data, areas):
     return float(finite.weighted(weights).mean().item())
 
 
+def discover_bias_field(path):
+    with netCDF4.Dataset(path) as dataset:
+        fields = [name for name in dataset.groups["MeanState"].variables
+                  if name.startswith("bias_map_of_")]
+    if len(fields) != 1:
+        raise ValueError(f"{path.name}: select --field from bias maps: {fields}")
+    return fields[0]
+
+
+def save_ranked_biases(rows, region_name, output, source, variable):
+    units = {row["units"] for row in rows}
+    if len(units) != 1:
+        raise ValueError(f"Inconsistent units across models: {units}")
+    ranked = sorted(rows, key=lambda row: (row["mean_bias"], row["model"]))
+    ranked = [dict(row, rank=index + 1) for index, row in enumerate(ranked)]
+    figure, axis = plt.subplots(figsize=(11, max(5, len(ranked) * 0.38 + 2)))
+    positions = np.arange(len(ranked))
+    biases = [row["mean_bias"] for row in ranked]
+    axis.hlines(positions, np.minimum(biases, 0), np.maximum(biases, 0),
+                color="0.85", linewidth=1.1, zorder=1)
+    axis.scatter(biases, positions, color="#087e8b", s=50, label="Models", zorder=3)
+    axis.set_yticks(positions, [row["model"] for row in ranked])
+    axis.invert_yaxis()
+    axis.axvline(0, color="#202020", linestyle="--", linewidth=1.5, label="Zero bias")
+    axis.set(ylim=(len(ranked) - 0.4, -0.6), ylabel="Model",
+             xlabel=f"Area-weighted mean bias: model minus {source} [{units.pop()}]")
+    axis.grid(axis="x", color="0.9", linewidth=0.7)
+    axis.set_axisbelow(True)
+    for label in axis.get_yticklabels():
+        label.set_fontweight("bold" if label.get_text() == "CLM-FATES" else "normal")
+        label.set_color("red" if label.get_text() in AGGREGATE_RED_MODELS else "black")
+    axis.spines[["top", "right"]].set_visible(False)
+    figure.suptitle(f"{region_name} | {variable} bias", fontsize=16, y=0.98)
+    figure.legend(*axis.get_legend_handles_labels(), loc="upper center",
+                  bbox_to_anchor=(0.57, 0.945), ncol=2, frameon=False)
+    figure.subplots_adjust(left=0.2, right=0.98, bottom=0.08, top=0.89)
+    variable_slug = "".join(character if character.isalnum() else "_"
+                            for character in variable.lower()).strip("_")
+    source_slug = "esacci" if source == "ESACCI6.0" else "".join(
+        character if character.isalnum() else "_" for character in source.lower()
+    ).strip("_")
+    region_slug = "".join(character if character.isalnum() else "_"
+                           for character in region_name.lower()).strip("_")
+    figure_stem = output.with_name(f"{region_slug}_ranked_bias_{variable_slug}_{source_slug}")
+    figure.savefig(figure_stem.with_suffix(".png"), dpi=180, facecolor="white")
+    plt.close(figure)
+    with csv_path(output, create=True).open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(ranked[0]))
+        writer.writeheader()
+        writer.writerows(ranked)
+    print(f"Saved ranked bias plot: {figure_stem.with_suffix('.png')}", flush=True)
+    return ranked
+
+
 def regional_et_ratio(numerator, et, numerator_areas, et_areas, variable):
     spec = ET_RATIO_SPECS[variable]
     if numerator.attrs.get("units") != spec["native_units"] or et.attrs.get("units") != "mm d-1":
@@ -325,6 +422,26 @@ def regional_gpp_et_ratio(gpp, et, gpp_areas, et_areas):
     return regional_et_ratio(gpp, et, gpp_areas, et_areas, "GPP")
 
 
+def regional_lai_gpp_ratio(lai, gpp, lai_areas, gpp_areas):
+    spec = LAI_GPP_RATIO_SPEC
+    if gpp.attrs.get("units") != spec["gpp_units"] or lai.attrs.get("units") != spec["lai_units"]:
+        raise ValueError("LAI/GPP requires dimensionless LAI and GPP in g m-2 d-1")
+    lai, gpp = xr.align(lai, gpp, join="exact")
+    areas = lai_areas.reindex_like(lai)
+    other_areas = gpp_areas.reindex_like(gpp)
+    if not np.allclose(areas.values, other_areas.values, rtol=1e-10, atol=0):
+        raise ValueError("LAI and GPP cell bounds must describe the same grid")
+    common = np.isfinite(lai) & np.isfinite(gpp)
+    mean_lai = area_weighted_mean(lai.where(common), areas)
+    mean_gpp = area_weighted_mean(gpp.where(common), areas)
+    if mean_gpp <= 0 or mean_lai < 0:
+        raise ValueError("LAI/GPP requires positive regional mean GPP and nonnegative mean LAI")
+    return {spec["mean_gpp_key"]: mean_gpp, spec["mean_lai_key"]: mean_lai,
+            spec["ratio_key"]: mean_lai / mean_gpp,
+            "valid_cells": int(common.sum().item()),
+            "valid_area_m2": float(areas.where(common).sum().item())}
+
+
 def plot_et_ratios(rows, observed, region_name, output, variable):
     spec = ET_RATIO_SPECS[variable]
     figure, axis = plt.subplots(figsize=(11, max(5, len(rows) * 0.38 + 2)))
@@ -350,8 +467,7 @@ def plot_et_ratios(rows, observed, region_name, output, variable):
     figure.legend(*axis.get_legend_handles_labels(), loc="upper center",
                   bbox_to_anchor=(0.57, 0.945), ncol=2, frameon=False)
     figure.subplots_adjust(left=0.2, right=0.98, bottom=0.08, top=0.89)
-    for suffix in (".png", ".pdf"):
-        figure.savefig(output.with_suffix(suffix), dpi=180, facecolor="white")
+    figure.savefig(output.with_suffix(".png"), dpi=180, facecolor="white")
     plt.close(figure)
 
 
@@ -361,6 +477,35 @@ def plot_lai_et_ratios(rows, observed, region_name, output):
 
 def plot_gpp_et_ratios(rows, observed, region_name, output):
     plot_et_ratios(rows, observed, region_name, output, "GPP")
+
+
+def plot_lai_gpp_ratios(rows, observed, region_name, output):
+    spec = LAI_GPP_RATIO_SPEC
+    figure, axis = plt.subplots(figsize=(11, max(5, len(rows) * 0.38 + 2)))
+    positions = np.arange(len(rows))
+    ratios = [row[spec["ratio_key"]] for row in rows]
+    reference = observed[spec["ratio_key"]]
+    axis.hlines(positions, np.minimum(ratios, reference), np.maximum(ratios, reference),
+                color="0.85", linewidth=1.1, zorder=1)
+    axis.scatter(ratios, positions, color="#087e8b", s=50, label="Models", zorder=3)
+    axis.axvline(reference, color="#202020", linestyle="--", linewidth=1.5,
+                 label=f"{spec['reference_label']} observed LAI/GPP = {reference:.3f} {spec['units']}")
+    axis.set(xlim=(0, max(max(ratios), reference) * 1.08),
+             ylim=(-0.6, len(rows) - 0.4), ylabel="Model",
+             xlabel=f"Ratio of regional mean LAI to mean GPP ({spec['units']})")
+    axis.set_yticks(positions, [row["model"] for row in rows])
+    axis.invert_yaxis()
+    for label in axis.get_yticklabels():
+        label.set_fontweight("bold" if label.get_text() == "CLM-FATES" else "normal")
+        label.set_color("red" if label.get_text() in AGGREGATE_RED_MODELS else "black")
+    axis.grid(axis="x", color="0.9", linewidth=0.7)
+    axis.spines[["top", "right"]].set_visible(False)
+    figure.suptitle(f"{region_name} | LAI / GPP", fontsize=16, y=0.98)
+    figure.legend(*axis.get_legend_handles_labels(), loc="upper center",
+                  bbox_to_anchor=(0.57, 0.945), ncol=2, frameon=False)
+    figure.subplots_adjust(left=0.2, right=0.98, bottom=0.08, top=0.89)
+    figure.savefig(output.with_suffix(".png"), dpi=180, facecolor="white")
+    plt.close(figure)
 
 
 def summarize_et_ratios(cache, output_dir, region_name, variable, models=None, offline=False):
@@ -373,7 +518,7 @@ def summarize_et_ratios(cache, output_dir, region_name, variable, models=None, o
     for key in (numerator_key, "modis-et"):
         benchmark = BENCHMARKS[key]
         stem = output_dir / f"{benchmark['slug']}_{benchmark['field']}_{slug}"
-        manifests[key] = json.loads(stem.with_suffix(".json").read_text())
+        manifests[key] = json.loads(metadata_path(cache, output_dir, stem).read_text())
         directory = cache / urlparse(manifests[key]["ilamb_url"]).path.strip("/").replace("/", "_")
         directories[key] = directory if key == "modis-lai" else directory / key
     numerator_manifest = manifests[numerator_key]
@@ -407,30 +552,15 @@ def summarize_et_ratios(cache, output_dir, region_name, variable, models=None, o
     rows = [{"model": model, "kind": "model",
              **read_pair(directories[numerator_key] / f"{BENCHMARKS[numerator_key]['source']}_{model}.nc",
                          directories["modis-et"] / f"MODIS_{model}.nc")} for model in models]
-    if variable == "GPP":
-        rows.sort(key=lambda row: (abs(row[spec["ratio_key"]]), row["model"].casefold()))
-        ordering = "Ascending absolute GPP/ET ratio"
-    else:
-        rows.sort(key=lambda row: (abs(row[spec["ratio_key"]] - observed[spec["ratio_key"]]),
-                                  row["model"].casefold()))
-        ordering = "Closest to the observed ratio first"
+    rows.sort(key=lambda row: (abs(row[spec["ratio_key"]]), row["model"].casefold()))
+    ordering = f"Ascending absolute {variable}/ET ratio"
     output = output_dir / f"{variable.lower()}_et_ratio_{slug}"
     plot_et_ratios(rows, observed, region_name, output, variable)
-    with output.with_suffix(".csv").open("w", newline="") as handle:
+    with csv_path(output, create=True).open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows + [observed])
-    metadata = {"region": region_name, "ilamb_url": numerator_manifest["ilamb_url"],
-                "models": models, "observed": observed, "units": spec["units"],
-                "fields": ["MeanState/" + spec["field"], "MeanState/timeint_of_et"],
-                "method": "Ratio of area-weighted regional means, not mean of cell ratios",
-                "mask": f"Common finite {variable} and ET cells within the basin, separately for each model or observation pair",
-                "weighting": f"Spherical area from native cell bounds; {variable} and ET grids must match within each pair",
-                "ordering": ordering,
-                "reference_files": {key: str(path) for key, path in references.items()},
-                "caveat": "Uses ILAMB-supplied period means without temporal harmonization. Native grids and valid footprints differ between models and observations; ratio agreement does not ensure either field is unbiased."}
-    output.with_suffix(".json").write_text(json.dumps(metadata, indent=2))
-    print(f"Saved {output.with_suffix('.png')} and PDF; observed {variable}/ET = {observed[spec['ratio_key']]:.4f} {spec['units']}", flush=True)
+    print(f"Saved {output.with_suffix('.png')}; observed {variable}/ET = {observed[spec['ratio_key']]:.4f} {spec['units']}", flush=True)
     return rows, observed
 
 
@@ -440,6 +570,61 @@ def summarize_lai_et_ratios(cache, output_dir, region_name, models=None, offline
 
 def summarize_gpp_et_ratios(cache, output_dir, region_name, models=None, offline=False):
     return summarize_et_ratios(cache, output_dir, region_name, "GPP", models, offline)
+
+
+def summarize_lai_gpp_ratios(cache, output_dir, region_name, models=None, offline=False):
+    spec = LAI_GPP_RATIO_SPEC
+    keys = ("fluxcom-gpp", "modis-lai")
+    slug = "".join(character if character.isalnum() else "_"
+                   for character in region_name.lower()).strip("_")
+    manifests = {}
+    directories = {}
+    for key in keys:
+        benchmark = BENCHMARKS[key]
+        stem = output_dir / f"{benchmark['slug']}_{benchmark['field']}_{slug}"
+        manifests[key] = json.loads(metadata_path(cache, output_dir, stem).read_text())
+        directory = cache / urlparse(manifests[key]["ilamb_url"]).path.strip("/").replace("/", "_")
+        directories[key] = directory if key == "modis-lai" else directory / key
+    gpp_manifest, lai_manifest = (manifests[key] for key in keys)
+    if (gpp_manifest["ilamb_url"] != lai_manifest["ilamb_url"]
+            or gpp_manifest["region"] != region_name or lai_manifest["region"] != region_name):
+        raise ValueError("GPP and LAI inputs must describe the same run and region")
+    models = models or gpp_manifest["models"]
+    if set(models) - (set(gpp_manifest["models"]) & set(lai_manifest["models"])):
+        raise ValueError("Selected models must be available for both GPP and LAI")
+    geometry = read_geometry(output_dir / gpp_manifest["boundary"])
+    references = {key: directories[key] / f"{BENCHMARKS[key]['source']}_Benchmark.nc"
+                  for key in keys}
+    with requests.Session() as session:
+        if not offline and any(not path.exists() for path in references.values()):
+            username = os.environ.get("ILAMB_USERNAME") or input("ILAMB username: ")
+            password = os.environ.get("ILAMB_PASSWORD") or getpass.getpass("ILAMB password: ")
+            session.auth = (username, password)
+        for key, path in references.items():
+            url = urljoin(gpp_manifest["ilamb_url"], BENCHMARKS[key]["path"] + path.name)
+            download(session, url, path, offline)
+
+    def read_pair(lai_path, gpp_path):
+        lai = subset_field(lai_path, spec["lai_field"], geometry)
+        gpp = subset_field(gpp_path, spec["gpp_field"], geometry)
+        return regional_lai_gpp_ratio(lai, gpp,
+                                      cell_areas_for_field(lai_path, spec["lai_field"]),
+                                      cell_areas_for_field(gpp_path, spec["gpp_field"]))
+
+    observed = {"model": spec["reference_label"] + " observations", "kind": "observation",
+                **read_pair(references["modis-lai"], references["fluxcom-gpp"])}
+    rows = [{"model": model, "kind": "model",
+             **read_pair(directories["modis-lai"] / f"MODIS_{model}.nc",
+                         directories["fluxcom-gpp"] / f"FLUXCOM_{model}.nc")} for model in models]
+    rows.sort(key=lambda row: (abs(row[spec["ratio_key"]]), row["model"].casefold()))
+    output = output_dir / f"lai_gpp_ratio_{slug}"
+    plot_lai_gpp_ratios(rows, observed, region_name, output)
+    with csv_path(output, create=True).open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows + [observed])
+    print(f"Saved {output.with_suffix('.png')}; observed LAI/GPP = {observed[spec['ratio_key']]:.4f} {spec['units']}", flush=True)
+    return rows, observed
 
 
 def normalize_mean_biases(rows):
@@ -460,8 +645,11 @@ def normalize_mean_biases(rows):
 def plot_mean_biases(rows, models, region_name, output):
     styles = [
         ("modis-et", "ET | MODIS", "#087e8b", "o"),
+        ("gleam-et", "ET | GLEAMv3.3a", "#087e8b", "v"),
         ("modis-lai", "LAI | MODIS", "#c7384f", "^"),
+        ("avh15c1-lai", "LAI | AVH15C1", "#c7384f", "v"),
         ("fluxcom-gpp", "GPP | FLUXCOM", "#d39117", "s"),
+        ("wecann-gpp", "GPP | WECANN", "#d39117", "P"),
     ]
     figure, axis = plt.subplots(figsize=(16, 6))
     positions = np.arange(len(models))
@@ -479,11 +667,10 @@ def plot_mean_biases(rows, models, region_name, output):
     axis.grid(axis="y", color="0.88", linewidth=0.7)
     axis.spines[["top", "right"]].set_visible(False)
     figure.suptitle(f"{region_name} | normalized mean bias | {len(models)} TRENDYv15 models", fontsize=16)
-    figure.legend(*axis.get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.52, 0.93),
+    figure.legend(*axis.get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.52, 0.95),
                   ncol=3, frameon=False)
-    figure.subplots_adjust(left=0.07, right=0.99, bottom=0.27, top=0.82)
-    for suffix in (".png", ".pdf"):
-        figure.savefig(output.with_suffix(suffix), dpi=180, facecolor="white")
+    figure.subplots_adjust(left=0.07, right=0.99, bottom=0.27, top=0.78)
+    figure.savefig(output.with_suffix(".png"), dpi=180, facecolor="white")
     plt.close(figure)
 
 
@@ -491,10 +678,10 @@ def aggregate_bias_scores(rows, models):
     scores = []
     for model in models:
         model_rows = [row for row in rows if row["model"] == model
-                      and row["benchmark"] not in ("gleam-et", "wecann-gpp", "avh15c1-lai")]
+                      and row["benchmark"] in AGGREGATE_BENCHMARKS]
         values = {row["benchmark"]: float(row["normalized_bias"]) for row in model_rows}
-        if len(model_rows) != len(COMPARISON_BENCHMARKS) or set(values) != set(COMPARISON_BENCHMARKS):
-            raise ValueError(f"Expected all {len(COMPARISON_BENCHMARKS)} comparison biases exactly once for {model}; rerun --summary")
+        if len(model_rows) != len(AGGREGATE_BENCHMARKS) or set(values) != set(AGGREGATE_BENCHMARKS):
+            raise ValueError(f"Expected all {len(AGGREGATE_BENCHMARKS)} aggregate biases exactly once for {model}; rerun --summary and create the biomass-change ranking")
         if any(not np.isfinite(value) or abs(value) > 1 for value in values.values()):
             raise ValueError("Normalized biases must be finite and between -1 and +1")
         category = {key: 1 - abs(value) for key, value in values.items()}
@@ -503,9 +690,12 @@ def aggregate_bias_scores(rows, models):
                 category[key] for key in COMPARISON_BENCHMARKS if BENCHMARKS[key]["variable"] == variable
             ])) for variable in ("ET", "LAI", "GPP")
         }
+        variable_scores["biomass_change_score"] = category["esacci-biomass-change"]
+        variable_scores["biomass_stock_score"] = category["esacci-biomass-stock"]
         scores.append({"model": model, **variable_scores,
-                       "aggregate_score": float(np.mean(list(variable_scores.values()))),
-                       **{key.replace("-", "_") + "_score": category[key] for key in COMPARISON_BENCHMARKS}})
+                              "aggregate_score": float(np.mean([category[key] for key in AGGREGATE_BENCHMARKS])),
+                              **{key.replace("-", "_") + "_score": category[key]
+                                  for key in COMPARISON_BENCHMARKS}})
     return sorted(scores, key=lambda row: (-row["aggregate_score"], row["model"].casefold()))
 
 
@@ -514,8 +704,13 @@ def plot_aggregate_scores(scores, region_name, output):
     positions = np.arange(len(scores))
     styles = [
         ("modis_et_score", "ET | MODIS", "#087e8b", "o"),
+        ("gleam_et_score", "ET | GLEAMv3.3a", "#087e8b", "v"),
         ("modis_lai_score", "LAI | MODIS", "#c7384f", "^"),
+        ("avh15c1_lai_score", "LAI | AVH15C1", "#c7384f", "v"),
         ("fluxcom_gpp_score", "GPP | FLUXCOM", "#d39117", "s"),
+        ("wecann_gpp_score", "GPP | WECANN", "#d39117", "P"),
+        ("biomass_change_score", "Biomass change | ESACCI6.0", "#3a8055", "P"),
+        ("biomass_stock_score", "Biomass stock | ESACCI6.0", "#6f8f3d", "^"),
         ("aggregate_score", "Aggregate", "#202020", "D"),
     ]
     axis.hlines(positions, 0, [row["aggregate_score"] for row in scores],
@@ -537,11 +732,10 @@ def plot_aggregate_scores(scores, region_name, output):
     axis.grid(axis="x", color="0.9", linewidth=0.7)
     axis.spines[["top", "right"]].set_visible(False)
     figure.suptitle(f"{region_name} | aggregate mean-bias scores", fontsize=16, y=0.98)
-    figure.legend(*axis.get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.57, 0.95),
-                  ncol=3, frameon=False)
-    figure.subplots_adjust(left=0.2, right=0.98, bottom=0.08, top=0.9)
-    for suffix in (".png", ".pdf"):
-        figure.savefig(output.with_suffix(suffix), dpi=180, facecolor="white")
+    figure.legend(*axis.get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.55, 0.95),
+                  ncol=4, frameon=False)
+    figure.subplots_adjust(left=0.2, right=0.98, bottom=0.08, top=0.88)
+    figure.savefig(output.with_suffix(".png"), dpi=180, facecolor="white")
     plt.close(figure)
 
 
@@ -549,29 +743,43 @@ def summarize_aggregate_scores(output_dir, region_name):
     slug = "".join(character if character.isalnum() else "_"
                    for character in region_name.lower()).strip("_")
     source = output_dir / f"normalized_mean_bias_{slug}"
-    metadata = json.loads(source.with_suffix(".json").read_text())
-    with source.with_suffix(".csv").open() as handle:
+    with csv_path(source).open() as handle:
         rows = list(csv.DictReader(handle))
-    scores = aggregate_bias_scores(rows, metadata["models"])
-    output = output_dir / f"aggregate_mean_bias_scores_{slug}"
+    models = list(dict.fromkeys(row["model"] for row in rows))
+    biomass_source = csv_path(output_dir / f"esacci_biomass_change_ranked_bias_{slug}")
+    with biomass_source.open() as handle:
+        biomass_rows = list(csv.DictReader(handle))
+    biomass_by_model = {row["model"]: float(row["mean_bias"]) for row in biomass_rows}
+    if len(biomass_by_model) != len(biomass_rows) or set(models) - set(biomass_by_model):
+        raise ValueError("Biomass-change ranking must contain each selected model exactly once")
+    rows.extend(normalize_mean_biases([
+        {"model": model, "benchmark": "esacci-biomass-change",
+         "mean_bias": biomass_by_model[model]}
+        for model in models
+    ]))
+    stock_source = csv_path(output_dir / f"esacci_biomass_stock_ranked_bias_{slug}")
+    with stock_source.open() as handle:
+        stock_rows = list(csv.DictReader(handle))
+    stock_by_model = {row["model"]: float(row["mean_bias"]) for row in stock_rows}
+    if len(stock_by_model) != len(stock_rows) or set(models) - set(stock_by_model):
+        raise ValueError("Biomass-stock ranking must contain each selected model exactly once")
+    rows.extend(normalize_mean_biases([
+        {"model": model, "benchmark": "esacci-biomass-stock",
+         "mean_bias": stock_by_model[model]}
+        for model in models
+    ]))
+    scores = aggregate_bias_scores(rows, models)
+    output = output_dir / f"{slug}_aggregate_mean_bias_scores"
     plot_aggregate_scores(scores, region_name, output)
-    with output.with_suffix(".csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(scores[0]))
+    with csv_path(output, create=True).open("w", newline="") as handle:
+        fields = ["model"] + [key.replace("-", "_") + "_score"
+                               for key in COMPARISON_BENCHMARKS]
+        fields += ["et_score", "lai_score", "gpp_score", "biomass_change_score",
+               "biomass_stock_score", "aggregate_score"]
+        writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
-        writer.writerows(scores)
-    metadata.update(source_summary=source.with_suffix(".csv").name,
-                    category_score="1 - abs(normalized regional mean bias)",
-                    variable_references={variable: [BENCHMARKS[key]["source"] for key in COMPARISON_BENCHMARKS
-                                                    if BENCHMARKS[key]["variable"] == variable]
-                                         for variable in ("ET", "LAI", "GPP")},
-                    et_score="MODIS ET score; GLEAM excluded",
-                    lai_score="MODIS LAI score; AVH15C1 excluded",
-                    gpp_score="FLUXCOM GPP score; WECANN excluded",
-                    aggregate_score="Equal-weight mean of ET, LAI and GPP scores",
-                    ordering="Highest aggregate score first",
-                    caveat="Custom relative mean-bias score, not ILAMB skill. Spatial errors can still cancel within a regional mean.")
-    output.with_suffix(".json").write_text(json.dumps(metadata, indent=2))
-    print(f"Saved {output.with_suffix('.png')} and PDF; {len(scores)} model scores in CSV", flush=True)
+        writer.writerows({key: row[key] for key in fields} for row in scores)
+    print(f"Saved {output.with_suffix('.png')}; {len(scores)} model scores in CSV", flush=True)
     return scores
 
 
@@ -584,7 +792,7 @@ def summarize_biases(cache, output_dir, region_name, models=None):
     for key in COMPARISON_BENCHMARKS:
         benchmark = BENCHMARKS[key]
         stem = output_dir / f"{benchmark['slug']}_{benchmark['field']}_{slug}"
-        manifest_path = stem.with_suffix(".json")
+        manifest_path = metadata_path(cache, output_dir, stem)
         manifest = json.loads(manifest_path.read_text())
         if reference_run is None:
             reference_run = manifest["ilamb_url"]
@@ -610,23 +818,17 @@ def summarize_biases(cache, output_dir, region_name, models=None):
     rows = normalize_mean_biases(rows)
     output = output_dir / f"normalized_mean_bias_{slug}"
     plot_mean_biases(rows, models, region_name, output)
-    with output.with_suffix(".csv").open("w", newline="") as handle:
+    with csv_path(output, create=True).open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    metadata = {"region": region_name, "ilamb_url": reference_run, "models": models,
-                "inputs": inputs, "normalization": "mean bias / largest absolute model mean bias per benchmark",
-                "zero_scale": "All zero biases map to zero", "weighting": "Spherical cell area from native bounds",
-                "mask": "Saved basin grid-centre mask; average over valid cells only",
-                "caveat": "Signed mean errors can cancel; this is not an ILAMB skill score. Scales depend on the plotted models."}
-    output.with_suffix(".json").write_text(json.dumps(metadata, indent=2))
-    print(f"Saved {output.with_suffix('.png')} and PDF; {len(rows)} means in CSV", flush=True)
+    print(f"Saved {output.with_suffix('.png')}; {len(rows)} means in CSV", flush=True)
     return rows
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default=DEFAULT_URL)
+    parser.add_argument("--url", help="Run URL; default depends on the selected benchmark")
     parser.add_argument("--cache", type=Path, default=ROOT / "cache")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "outputs")
     parser.add_argument("--models", nargs="+", help="Default: all discovered models")
@@ -635,6 +837,7 @@ def main(argv=None):
     parser.add_argument("--field", help="MeanState variable; default: selected benchmark's bias map")
     parser.add_argument("--region-geojson", type=Path, help="Optional WGS84 watershed polygon")
     parser.add_argument("--region-name", default="Amazon basin")
+    parser.add_argument("--north-limit", type=float, help="Optional maximum latitude shown on map axes")
     parser.add_argument("--columns", type=int, default=5)
     parser.add_argument("--limit", type=float, help="Symmetric bias colour limit; LAI bias defaults to 3")
     parser.add_argument("--vmin", type=float, help="Minimum colour value for the selected field")
@@ -647,8 +850,16 @@ def main(argv=None):
                         help="Plot model regional mean LAI/ET ratios with the MODIS observed reference")
     parser.add_argument("--gpp-et-ratio", action="store_true",
                         help="Plot model mean GPP/ET ratios with the FLUXCOM GPP / MODIS ET reference")
+    parser.add_argument("--lai-gpp-ratio", action="store_true",
+                        help="Plot model mean LAI/GPP ratios with the MODIS LAI / FLUXCOM GPP reference")
     parser.add_argument("--offline", action="store_true", help="Use only cached downloads")
     args = parser.parse_args(argv)
+    if args.lai_gpp_ratio:
+        if args.gpp_et_ratio or args.lai_et_ratio or args.summary or args.aggregate:
+            parser.error("Run --lai-gpp-ratio separately from other comparison options")
+        summarize_lai_gpp_ratios(args.cache, args.output_dir, args.region_name,
+                                 args.models, args.offline)
+        return
     if args.gpp_et_ratio:
         if args.lai_et_ratio or args.summary or args.aggregate:
             parser.error("Run --gpp-et-ratio separately from other comparison options")
@@ -670,17 +881,20 @@ def main(argv=None):
         summarize_biases(args.cache, args.output_dir, args.region_name, args.models)
         return
     benchmark = BENCHMARKS[args.benchmark]
-    args.field = args.field or benchmark["field"]
+    args.url = args.url or benchmark.get("url", DEFAULT_URL)
+    detect_bias = args.benchmark in BIOMASS_BENCHMARKS and args.field is None
+    args.field = args.field or benchmark.get("field")
     if args.columns < 1:
         parser.error("--columns must be positive")
     explicit_limits = any(value is not None for value in (args.limit, args.vmin, args.vmax))
     if (benchmark["variable"] == "LAI" and args.field == "bias_map_of_lai"
             and not explicit_limits):
         args.limit = 3.0
-    try:
-        colour_normalization(np.array([0.0, 1.0]), args.field, args.limit, args.vmin, args.vmax)
-    except ValueError as error:
-        parser.error(str(error))
+    if args.field is not None:
+        try:
+            colour_normalization(np.array([0.0, 1.0]), args.field, args.limit, args.vmin, args.vmax)
+        except ValueError as error:
+            parser.error(str(error))
     benchmark_url = urljoin(args.url.rstrip("/") + "/", benchmark["path"])
     cache = args.cache / urlparse(args.url).path.strip("/").replace("/", "_")
     if args.benchmark != "modis-lai":
@@ -701,17 +915,38 @@ def main(argv=None):
         geometry = (read_geometry(args.region_geojson) if args.region_geojson
                     else amazon_geometry(args.cache, args.offline))
         results = []
+        bias_rows = []
         for model in models:
             link = available[model]
             print(f"Loading {model}", flush=True)
             path = download(session, urljoin(benchmark_url, link), cache / link, args.offline)
+            if detect_bias:
+                args.field = discover_bias_field(path)
+                try:
+                    colour_normalization(np.array([0.0, 1.0]), args.field,
+                                         args.limit, args.vmin, args.vmax)
+                except ValueError as error:
+                    parser.error(str(error))
+                detect_bias = False
             data = subset_field(path, args.field, geometry)
             data.attrs.update(model=model, source_url=urljoin(benchmark_url, link),
                               region=args.region_name, benchmark=args.benchmark)
             results.append((model, data))
+            if args.benchmark in BIOMASS_BENCHMARKS and args.field.startswith("bias_map_of_"):
+                areas = cell_areas_for_field(path, args.field)
+                bias_rows.append({"model": model, "field": args.field,
+                    "units": data.attrs.get("units", "1"),
+                    "mean_bias": area_weighted_mean(data, areas),
+                    "valid_cells": int(np.isfinite(data.values).sum()),
+                    "valid_area_m2": float(areas.reindex_like(data).where(np.isfinite(data)).sum())})
     slug = "".join(character if character.isalnum() else "_"
                    for character in args.region_name.lower()).strip("_")
     stem = args.output_dir / f"{benchmark['slug']}_{args.field}_{slug}"
+    source_slug = "".join(character if character.isalnum() else "_"
+                           for character in benchmark["source"].lower()).strip("_")
+    variable_slug = "".join(character if character.isalnum() else "_"
+                             for character in benchmark["variable"].lower()).strip("_")
+    map_stem = args.output_dir / f"{slug}_bias_map_{variable_slug}_{source_slug}"
     subset_dir = args.output_dir / f"{stem.name}_subsets"
     subset_dir.mkdir(exist_ok=True)
     for model, data in results:
@@ -723,18 +958,25 @@ def main(argv=None):
         "mask_method": "Grid-cell centre within polygon",
     }, "geometry": mapping(geometry)}))
     colour_min, colour_max = plot_models(
-        results, geometry, args.field, args.region_name, stem, args.columns,
+        results, geometry, args.field, args.region_name, map_stem, args.columns,
         args.limit, args.vmin, args.vmax, benchmark["source"], benchmark["variable"],
+        north_limit=args.north_limit,
     )
     manifest = {"ilamb_url": args.url, "field": args.field, "models": models,
             "benchmark": args.benchmark, "benchmark_path": benchmark["path"],
             "source": benchmark["source"], "variable": benchmark["variable"],
             "units": results[0][1].attrs.get("units", "1"),
                 "region": args.region_name, "boundary": boundary.name,
+                "north_limit": args.north_limit,
                 "mask_method": "Grid-cell centre within polygon", "colour_limit": args.limit,
                 "colour_min": colour_min, "colour_max": colour_max}
-    stem.with_suffix(".json").write_text(json.dumps(manifest, indent=2))
-    print(f"Saved {stem.with_suffix('.png')} and PDF; {len(results)} model subsets", flush=True)
+    metadata_path(args.cache, args.output_dir, stem).write_text(json.dumps(manifest, indent=2))
+    if bias_rows:
+        ranking_stem = args.output_dir / f"{benchmark['slug']}_ranked_bias_{slug}"
+        save_ranked_biases(bias_rows, args.region_name, ranking_stem,
+                          benchmark["source"], benchmark["variable"])
+        print(f"Saved ranked mean biases: {csv_path(ranking_stem)}", flush=True)
+    print(f"Saved {map_stem.with_suffix('.png')}; {len(results)} model subsets", flush=True)
 
 
 if __name__ == "__main__":

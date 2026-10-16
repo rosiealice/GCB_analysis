@@ -16,7 +16,95 @@ from ilamb_regions import area_weighted_mean, cell_areas_for_field, normalize_me
 from ilamb_regions import aggregate_bias_scores, plot_aggregate_scores
 from ilamb_regions import regional_lai_et_ratio, plot_lai_et_ratios
 from ilamb_regions import regional_gpp_et_ratio, plot_gpp_et_ratios
+from ilamb_regions import regional_lai_gpp_ratio, plot_lai_gpp_ratios
+from ilamb_regions import COMPARISON_BENCHMARKS, discover_bias_field, save_ranked_biases
 
+
+class BiomassChangeTests(unittest.TestCase):
+    def test_bias_field_is_discovered_without_guessing_variable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.nc"
+            with netCDF4.Dataset(path, "w") as dataset:
+                group = dataset.createGroup("MeanState")
+                group.createVariable("bias_map_of_dbm", "f8")
+                group.createVariable("biasscore_map_of_dbm", "f8")
+            self.assertEqual(discover_bias_field(path), "bias_map_of_dbm")
+            with netCDF4.Dataset(path, "a") as dataset:
+                dataset.groups["MeanState"].createVariable("bias_map_of_other", "f8")
+            with self.assertRaisesRegex(ValueError, "select --field"):
+                discover_bias_field(path)
+
+    def test_ranking_uses_signed_bias_and_matches_point_plot_style(self):
+        rows = [{"model": model, "mean_bias": bias, "units": "kg m-2 yr-1"}
+                for model, bias in [("CLM-FATES", -2), ("ModelB", 0.5), ("ModelC", 3)]]
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "ranking"
+            with patch("ilamb_regions.plt.close"), patch("matplotlib.figure.Figure.savefig"):
+                ranked = save_ranked_biases(rows, "Amazon basin", output, "ESACCI6.0", "Biomass change")
+            self.assertEqual([row["model"] for row in ranked], ["CLM-FATES", "ModelB", "ModelC"])
+            self.assertEqual([row["rank"] for row in ranked], [1, 2, 3])
+            axis = plt.gcf().axes[0]
+            self.assertEqual(len(axis.patches), 0)
+            np.testing.assert_equal(axis.collections[1].get_offsets(), [[-2, 0], [0.5, 1], [3, 2]])
+            self.assertTrue(axis.yaxis_inverted())
+            self.assertEqual(axis.get_yticklabels()[0].get_fontweight(), "bold")
+            self.assertEqual(axis.get_yticklabels()[0].get_color(), "red")
+            self.assertEqual(axis.get_yticklabels()[1].get_color(), "black")
+            self.assertFalse(axis.spines["top"].get_visible())
+            self.assertFalse(axis.spines["right"].get_visible())
+            self.assertEqual(axis.lines[0].get_linestyle(), "--")
+            self.assertTrue((Path(directory) / "csv" / "ranking.csv").exists())
+            self.assertFalse(output.with_suffix(".pdf").exists())
+            self.assertFalse(output.with_suffix(".json").exists())
+            plt.close("all")
+
+    def test_biomass_uses_be_run_and_does_not_change_aggregate(self):
+        self.assertNotIn("esacci-biomass-change", COMPARISON_BENCHMARKS)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("ilamb_regions.discover_models", side_effect=RuntimeError("stop")) as discover:
+                with self.assertRaisesRegex(RuntimeError, "stop"):
+                    main(["--offline", "--benchmark", "esacci-biomass-change",
+                          "--cache", directory, "--output-dir", directory])
+                self.assertIn("GCP_270926a4BE/EcosystemandCarbonCycle/BiomassChange/ESACCI6.0/",
+                              discover.call_args.args[1])
+
+    def test_offline_workflow_writes_maps_rankings_and_subsets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "ESACCI6.0_CLM-FATES.nc"
+            with netCDF4.Dataset(path, "w") as dataset:
+                group = dataset.createGroup("MeanState")
+                for name, length in [("lat", 2), ("lon", 2), ("nb", 2)]:
+                    group.createDimension(name, length)
+                for name, values, bounds in [
+                    ("lat", [-1, 1], [[-2, 0], [0, 2]]),
+                    ("lon", [-71, -69], [[-72, -70], [-70, -68]]),
+                ]:
+                    coordinate = group.createVariable(name, "f8", (name,))
+                    coordinate[:] = values
+                    coordinate.bounds = name + "_bounds"
+                    group.createVariable(coordinate.bounds, "f8", (name, "nb"))[:] = bounds
+                data = group.createVariable("bias_map_of_dbm", "f8", ("lat", "lon"))
+                data.units = "kg m-2 yr-1"
+                data[:] = [[-2, 1], [-2, 1]]
+            with patch("ilamb_regions.discover_models", return_value=[path.name]), \
+                    patch("ilamb_regions.download", return_value=path), \
+                    patch("ilamb_regions.amazon_geometry", return_value=box(-72, -2, -68, 2)):
+                main(["--offline", "--benchmark", "esacci-biomass-change",
+                      "--cache", directory, "--output-dir", directory])
+            map_stem = root / "amazon_basin_bias_map_biomass_change_esacci6_0"
+            subset_stem = root / "esacci_biomass_change_bias_map_of_dbm_amazon_basin"
+            ranking_stem = root / "esacci_biomass_change_ranked_bias_amazon_basin"
+            ranking_plot_stem = root / "amazon_basin_ranked_bias_biomass_change_esacci"
+            self.assertGreater(map_stem.with_suffix(".png").stat().st_size, 0)
+            self.assertGreater(ranking_plot_stem.with_suffix(".png").stat().st_size, 0)
+            for stem in (map_stem, ranking_plot_stem):
+                self.assertFalse(stem.with_suffix(".pdf").exists())
+                self.assertFalse(stem.with_suffix(".json").exists())
+            ranking_csv = root / "csv" / f"{ranking_stem.name}.csv"
+            self.assertTrue(ranking_csv.exists())
+            self.assertTrue((root / (subset_stem.name + "_subsets") / "CLM-FATES.nc").exists())
+            self.assertIn("-0.5", ranking_csv.read_text())
 
 class DownloadTests(unittest.TestCase):
     def test_connection_failure_retries_then_caches(self):
@@ -216,7 +304,7 @@ class MeanBiasTests(unittest.TestCase):
         self.assertEqual([row["normalization_scale"] for row in normalized], [4, 4, 0, 0])
         self.assertNotIn("normalized_bias", rows[0])
 
-    def test_mean_plot_has_three_points_without_excluded_references_and_bold_fates(self):
+    def test_mean_plot_has_all_six_references_and_bold_fates(self):
         models = ["CLM-FATES", "CLM6.0"]
         rows = [{"model": model, "benchmark": benchmark, "normalized_bias": 0.25}
                 for model in models for benchmark in BENCHMARKS]
@@ -225,9 +313,10 @@ class MeanBiasTests(unittest.TestCase):
             figure = plt.gcf()
         try:
             axis = figure.axes[0]
-            self.assertEqual(len(axis.collections), 3)
-            self.assertFalse(any(reference in label for reference in ("GLEAM", "WECANN", "AVH15C1")
-                                 for label in axis.get_legend_handles_labels()[1]))
+            self.assertEqual(len(axis.collections), 6)
+            labels = axis.get_legend_handles_labels()[1]
+            self.assertTrue(all(reference in " ".join(labels)
+                                for reference in ("GLEAM", "WECANN", "AVH15C1")))
             self.assertTrue(all(len(collection.get_offsets()) == 2 for collection in axis.collections))
             self.assertEqual([label.get_fontweight() for label in axis.get_xticklabels()], ["bold", "normal"])
             self.assertEqual(axis.get_ylabel(), "Normalized area-weighted mean bias")
@@ -327,51 +416,120 @@ class GppEtRatioTests(unittest.TestCase):
             plt.close(figure)
 
 
+class LaiGppRatioTests(unittest.TestCase):
+    def make_fields(self):
+        coords = {"lat": [-1, 1], "lon": [-71, -69]}
+        gpp = xr.DataArray([[2.0, 12.0], [2.0, 12.0]], dims=("lat", "lon"),
+                           coords=coords, attrs={"units": "g m-2 d-1"})
+        lai = xr.DataArray([[1.0, 3.0], [1.0, 3.0]], dims=("lat", "lon"),
+                           coords=coords, attrs={"units": "1"})
+        areas = xr.DataArray([[1.0, 3.0], [1.0, 3.0]], dims=("lat", "lon"), coords=coords)
+        return gpp, lai, areas
+
+    def test_ratio_of_area_weighted_means_uses_joint_valid_cells(self):
+        gpp, lai, areas = self.make_fields()
+        result = regional_lai_gpp_ratio(lai, gpp, areas, areas)
+        self.assertEqual(result["mean_gpp_g_m2_day"], 9.5)
+        self.assertEqual(result["mean_lai"], 2.5)
+        self.assertAlmostEqual(result["lai_gpp_ratio_day_m2_g"], 2.5 / 9.5)
+        self.assertEqual(result["valid_area_m2"], 8)
+        gpp.loc[dict(lat=-1, lon=-69)] = np.nan
+        lai.loc[dict(lat=1, lon=-69)] = np.nan
+        result = regional_lai_gpp_ratio(lai, gpp, areas, areas)
+        self.assertEqual(result["valid_cells"], 2)
+        self.assertEqual(result["lai_gpp_ratio_day_m2_g"], 0.5)
+
+    def test_mismatched_grids_and_nonpositive_gpp_fail(self):
+        gpp, lai, areas = self.make_fields()
+        with self.assertRaises(ValueError):
+            regional_lai_gpp_ratio(lai.assign_coords(lon=[-72, -70]), gpp, areas, areas)
+        with self.assertRaisesRegex(ValueError, "positive regional mean GPP"):
+            regional_lai_gpp_ratio(lai, gpp.copy(data=np.zeros_like(gpp.values)), areas, areas)
+
+    def test_plot_shows_observed_reference_and_highlights_models(self):
+        rows = [{"model": "CLM-FATES", "lai_gpp_ratio_day_m2_g": 0.31},
+            {"model": "VISIT-UT", "lai_gpp_ratio_day_m2_g": 0.42}]
+        observed = {"lai_gpp_ratio_day_m2_g": 0.36}
+        with patch("ilamb_regions.plt.close"), patch("matplotlib.figure.Figure.savefig"):
+            plot_lai_gpp_ratios(rows, observed, "Amazon basin", Path("unused"))
+            figure = plt.gcf()
+        try:
+            axis = figure.axes[0]
+            np.testing.assert_equal(axis.lines[0].get_xdata(), [0.36, 0.36])
+            self.assertIn("MODIS LAI / FLUXCOM GPP", axis.lines[0].get_label())
+            self.assertIn("mean LAI to mean GPP", axis.get_xlabel())
+            self.assertEqual(axis.get_yticklabels()[0].get_fontweight(), "bold")
+        finally:
+            plt.close(figure)
+
+
 class AggregateScoreTests(unittest.TestCase):
-    def make_rows(self, model, values):
-        return [{"model": model, "benchmark": key, "normalized_bias": value}
+    def make_rows(self, model, values, biomass_bias=0, biomass_stock_bias=0):
+        rows = [{"model": model, "benchmark": key, "normalized_bias": value}
                 for key, value in zip(("modis-et", "gleam-et", "modis-lai", "fluxcom-gpp", "avh15c1-lai", "wecann-gpp"), values)]
+        rows.append({"model": model, "benchmark": "esacci-biomass-change",
+                     "normalized_bias": biomass_bias})
+        rows.append({"model": model, "benchmark": "esacci-biomass-stock",
+                 "normalized_bias": biomass_stock_bias})
+        return rows
 
     def test_both_bias_signs_penalize_without_category_cancellation(self):
         rows = self.make_rows("positive", [0.5] * 6)
         rows += self.make_rows("negative", [-0.5] * 6)
         rows += self.make_rows("mixed", [0.5, -0.5, 0.5, -0.5, -0.5, 0.5])
         scores = aggregate_bias_scores(rows, ["positive", "negative", "mixed"])
-        self.assertTrue(all(row["aggregate_score"] == 0.5 for row in scores))
+        self.assertTrue(all(np.isclose(row["aggregate_score"], 5 / 8) for row in scores))
 
-    def test_et_references_do_not_double_weight_et(self):
+    def test_both_et_references_contribute_to_one_category_score(self):
         rows = self.make_rows("example", [1, 1, 0, 0, 0, 0])
         score = aggregate_bias_scores(rows, ["example"])[0]
         self.assertEqual(score["et_score"], 0)
-        self.assertAlmostEqual(score["aggregate_score"], 2 / 3)
+        self.assertEqual(score["modis_et_score"], 0)
+        self.assertEqual(score["gleam_et_score"], 0)
+        self.assertAlmostEqual(score["aggregate_score"], 6 / 8)
 
-    def test_gleam_does_not_affect_scores_or_export(self):
-        baseline = aggregate_bias_scores(self.make_rows("example", [0.2, 0, 0, 0, 0, 0]), ["example"])
-        changed = aggregate_bias_scores(self.make_rows("example", [0.2, 1, 0, 0, 0, 0]), ["example"])
-        self.assertEqual(baseline, changed)
-        self.assertEqual(baseline[0]["et_score"], 0.8)
-        self.assertNotIn("gleam_et_score", baseline[0])
+    def test_biomass_change_is_included_in_equal_weight_aggregate(self):
+        rows = self.make_rows("good", [0] * 6, biomass_bias=0)
+        rows += self.make_rows("poor", [0] * 6, biomass_bias=1)
+        scores = aggregate_bias_scores(rows, ["good", "poor"])
+        self.assertEqual(scores[0]["biomass_change_score"], 1)
+        self.assertEqual(scores[0]["aggregate_score"], 1)
+        self.assertEqual(scores[1]["biomass_change_score"], 0)
+        self.assertAlmostEqual(scores[1]["aggregate_score"], 7 / 8)
 
-    def test_wecann_does_not_affect_scores_or_export(self):
-        baseline = aggregate_bias_scores(self.make_rows("example", [0, 0, 0, 0.2, 0, 0]), ["example"])
-        changed = aggregate_bias_scores(self.make_rows("example", [0, 0, 0, 0.2, 0, 1]), ["example"])
-        self.assertEqual(baseline, changed)
-        self.assertEqual(baseline[0]["gpp_score"], 0.8)
-        self.assertNotIn("wecann_gpp_score", baseline[0])
+    def test_biomass_stock_is_a_separate_equal_weight_score(self):
+        rows = self.make_rows("good", [0] * 6, biomass_stock_bias=0)
+        rows += self.make_rows("poor", [0] * 6, biomass_stock_bias=-1)
+        scores = aggregate_bias_scores(rows, ["good", "poor"])
+        self.assertEqual(scores[0]["biomass_stock_score"], 1)
+        self.assertEqual(scores[0]["aggregate_score"], 1)
+        self.assertEqual(scores[1]["biomass_stock_score"], 0)
+        self.assertEqual(scores[1]["aggregate_score"], 7 / 8)
+
+    def test_gleam_contributes_to_et_and_aggregate_scores(self):
+        score = aggregate_bias_scores(self.make_rows("example", [0, 1, 0, 0, 0, 0]), ["example"])[0]
+        self.assertEqual(score["et_score"], 0.5)
+        self.assertEqual(score["gleam_et_score"], 0)
+        self.assertAlmostEqual(score["aggregate_score"], 7 / 8)
+
+    def test_wecann_contributes_to_gpp_and_aggregate_scores(self):
+        score = aggregate_bias_scores(self.make_rows("example", [0, 0, 0, 0, 0, 1]), ["example"])[0]
+        self.assertEqual(score["gpp_score"], 0.5)
+        self.assertEqual(score["wecann_gpp_score"], 0)
+        self.assertAlmostEqual(score["aggregate_score"], 7 / 8)
 
     def test_zero_bias_is_one_and_models_are_ranked(self):
-        rows = self.make_rows("worst", [1, -1, 1, -1, -1, 1])
+        rows = self.make_rows("worst", [1, -1, 1, -1, -1, 1], biomass_bias=1)
         rows += self.make_rows("best", [0] * 6)
         scores = aggregate_bias_scores(rows, ["worst", "best"])
         self.assertEqual([row["model"] for row in scores], ["best", "worst"])
-        self.assertEqual([row["aggregate_score"] for row in scores], [1, 0])
+        self.assertEqual([row["aggregate_score"] for row in scores], [1, 1 / 8])
 
-    def test_avh15c1_does_not_affect_lai_scores_or_export(self):
-        baseline = aggregate_bias_scores(self.make_rows("example", [0, 0, 0.2, 0, 0, 0]), ["example"])
-        changed = aggregate_bias_scores(self.make_rows("example", [0, 0, 0.2, 0, 1, 0]), ["example"])
-        self.assertEqual(baseline, changed)
-        self.assertEqual(baseline[0]["lai_score"], 0.8)
-        self.assertNotIn("avh15c1_lai_score", baseline[0])
+    def test_avh15c1_contributes_to_lai_and_aggregate_scores(self):
+        score = aggregate_bias_scores(self.make_rows("example", [0, 0, 0, 0, 1, 0]), ["example"])[0]
+        self.assertEqual(score["lai_score"], 0.5)
+        self.assertEqual(score["avh15c1_lai_score"], 0)
+        self.assertAlmostEqual(score["aggregate_score"], 7 / 8)
 
     def test_missing_or_invalid_benchmark_scores_fail(self):
         with self.assertRaises(ValueError):
@@ -407,16 +565,39 @@ class AggregateScoreTests(unittest.TestCase):
             self.assertEqual(axis.get_yticklabels()[0].get_text(), "CLM-FATES")
             self.assertEqual(axis.get_yticklabels()[0].get_fontweight(), "bold")
             self.assertTrue(axis.yaxis_inverted())
-            self.assertEqual(len(axis.collections), 5)
+            self.assertEqual(len(axis.collections), 10)
             for collection in axis.collections[1:]:
                 np.testing.assert_equal(collection.get_offsets()[:, 1], [0])
-            self.assertFalse(any(reference in label for reference in ("GLEAM", "WECANN", "AVH15C1")
-                                 for label in axis.get_legend_handles_labels()[1]))
+            labels = axis.get_legend_handles_labels()[1]
+            self.assertTrue(all(reference in " ".join(labels)
+                                for reference in ("GLEAM", "WECANN", "AVH15C1")))
+            self.assertIn("Biomass change | ESACCI6.0", axis.get_legend_handles_labels()[1])
         finally:
             plt.close(figure)
 
 
 class PlotStyleTests(unittest.TestCase):
+    def test_scandinavia_map_grid_has_three_rows(self):
+        data = xr.DataArray([[0.1, 0.3], [0.5, 0.7]], dims=("lat", "lon"),
+                            coords={"lat": [-1, 1], "lon": [-71, -69]},
+                            attrs={"units": "1"})
+        results = [(f"Model{index}", data) for index in range(24)]
+        with patch("ilamb_regions.plt.close"), patch("matplotlib.figure.Figure.savefig"):
+            plot_models(results, box(5, 55, 31, 81), "bias_map_of_lai",
+                        "Scandinavia", Path("unused"), columns=8, north_limit=73)
+            figure = plt.gcf()
+        try:
+            self.assertEqual(figure.axes[0].get_subplotspec().get_gridspec().get_geometry(),
+                             (3, 8))
+            self.assertEqual(figure.axes[0].get_ylim()[1], 73)
+            self.assertEqual(figure.axes[0].get_facecolor(), (1.0, 1.0, 1.0, 1.0))
+            self.assertEqual(figure.axes[0].xaxis.label.get_fontsize(), 4.8)
+            self.assertEqual(figure.axes[0].yaxis.label.get_fontsize(), 4.8)
+            self.assertIn("TRENDY models vs MODIS LAI", figure._suptitle.get_text())
+            self.assertIn("bias map", figure._suptitle.get_text().lower())
+        finally:
+            plt.close(figure)
+
     def test_et_and_gpp_labels_use_reference_and_native_units(self):
         for source, variable, unit in [("MODIS", "ET", "mm d-1"),
                                        ("GLEAMv3.3a", "ET", "mm d-1"),
